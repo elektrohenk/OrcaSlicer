@@ -3043,17 +3043,45 @@ Polylines FillGrid::fill_surface(const Surface *surface, const FillParams &param
 Polylines Fill2DLattice::fill_surface(const Surface *surface, const FillParams &params)
 {
     Polylines polylines_out;
-    coordf_t dx1 = tan(Geometry::deg2rad(params.lattice_angle_1)) * z;
-    coordf_t dx2 = tan(Geometry::deg2rad(params.lattice_angle_2)) * z;
-    if (! this->fill_surface_by_multilines(
-            surface, params,
-            { { float(M_PI / 2.), float(dx1) }, { float(M_PI / 2.), float(dx2) } },
-            polylines_out))
-        BOOST_LOG_TRIVIAL(error) << "Fill2DLattice::fill_surface() failed to fill a region.";
+//    coordf_t dx1 = tan(Geometry::deg2rad(params.lattice_angle_1)) * z;
+//    coordf_t dx2 = tan(Geometry::deg2rad(params.lattice_angle_2)) * z;
+//    if (! this->fill_surface_by_multilines(
+//            surface, params,
+//            { { float(M_PI / 2.), float(dx1) }, { float(M_PI / 2.), float(dx2) } },
+//            polylines_out))
+//        BOOST_LOG_TRIVIAL(error) << "Fill2DLattice::fill_surface() failed to fill a region.";
 
-    if (this->layer_id % 2 == 1)
-        for (int i = 0; i < polylines_out.size(); i++)
-            std::reverse(polylines_out[i].begin(), polylines_out[i].end());
+    // experiment with tubular lines
+    using namespace boost::math::float_constants;
+
+    // first obtain the radius
+    const auto layer_bounding_box = get_extents(surface->expolygon.contour); // Slic3r::get_extents(*surface);
+    const auto radius = unscale_(layer_bounding_box.radius());
+    const unsigned number_of_lines = std::round(pi * radius * params.density / float(spacing));
+
+    const auto layer_center = layer_bounding_box.center();
+    const auto distance_to_center = unscale_(layer_center.norm());
+    const auto angle_to_center = atan2f(layer_center.y(), layer_center.x());
+
+    const float tan_lattice_angle = tan(Geometry::deg2rad(params.lattice_angle_1)) * z / radius;
+
+    FillParams multiline_params = params;
+    multiline_params.density = float(spacing) / radius;
+    for (int side = -1; side <= 1; side += 2) {
+        for (unsigned i = 0; i < number_of_lines; i++) {
+            const float multiline_angle = i * pi / number_of_lines + side * tan_lattice_angle;
+            if (! this->fill_surface_by_multilines(
+                    surface, multiline_params,
+                    { { multiline_angle, float(distance_to_center * cos(angle_to_center - (multiline_angle + angle - half_pi))) } },
+                    polylines_out))
+                BOOST_LOG_TRIVIAL(error) << "Fill2DLattice::fill_surface() failed to fill a region.";
+        }
+    }
+
+//    if (this->layer_id % 2 == 1)
+//        for (int i = 0; i < polylines_out.size(); i++)
+//            std::reverse(polylines_out[i].begin(), polylines_out[i].end());
+
     return polylines_out;
 }
 
